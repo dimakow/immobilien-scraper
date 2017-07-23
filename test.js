@@ -1,3 +1,5 @@
 let testFn = require('./app')
 
-testFn.myHandler({}, {})
+testFn.myHandler({
+    "mode": "grabAll"
+}, {})
