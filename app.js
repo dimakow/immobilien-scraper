@@ -89,7 +89,7 @@ let fnCheckBodyAndExtractExpose = (elem, body) => {
             N: new Date().getTime().toString()
         },
         'dateDeactivated': {
-            N: 0
+            N: "0"
         }
 
     }
@@ -190,7 +190,8 @@ let fnCheckBodyAndExtractExpose = (elem, body) => {
 }
 
 exports.myHandler = function(event, context) {
-    var totalExposes = 0;
+    iCounter = 0;
+    iCounterNew = 0;
     console.log('Mode: ' + event.mode)
     switch (event.mode) {
         case "grabAll":
@@ -234,6 +235,7 @@ exports.myHandler = function(event, context) {
                 aBodies.forEach(sBody => {
                     fnCheckBodyAndReturn(sBody, mExposeIds)
                 })
+                console.log(mExposeIds);
                 mExposeIds.forEach((sValue, iExposeId) => {
                     aPromises.push(fnCheckForNewItem(iExposeId))
                 })
