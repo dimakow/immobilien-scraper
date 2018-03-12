@@ -1,19 +1,22 @@
 let cheerio = require('cheerio');
 
-
+//https://www.immobilienscout24.de/Suche/S-T/P-1/Wohnung-Miete/Umkreissuche/Berlin_2dMitte_20_28Mitte_29/-/228105/2512493/-/1276003001046/5/2,00-/-/EURO--600,00?enteredFrom=one_step_search
 let content;
 let tableName = "adindex";
 let urlPart1 = 'https://www.immobilienscout24.de/'
 let urlPart2 = 'Suche/S-T/Wohnung-Miete/Umkreissuche/Berlin_2dMitte_20_28Mitte_29/-/228105/2512493/-/1276003001046/4/1,00-/-/EURO--500,00?enteredFrom=one_step_search'
 let urlPart3 = 'Suche/S-T/Wohnung-Miete/Berlin/Berlin/Wedding-Wedding/3,00-/-/EURO--1500,00?enteredFrom=one_step_search'
-let exposeUrlPart = 'https://www.immobilienscout24.de/expose/'
+let urlSearch = 'Wohnung-Miete/Umkreissuche/Berlin_2dMitte_20_28Mitte_29/-/228105/2512493/-/1276003001046/4/1,00-/-/EURO--500,00'
+let search = 'Wohnung-Miete/Umkreissuche/Berlin_2dMitte_20_28Mitte_29/-/228105/2512493/-/1276003001046/5/1,00-/-/EURO--2000,00?enteredFrom=one_step_search';
+let page = 1;
+let urlPage = (page) => {
+    return `https://www.immobilienscout24.de/Suche/S-T/P-${page}/${search}`};
+let exposeUrlPart = 'https://www.immobilienscout24.de/expose/';
 
-let urlHelper = require('./lib/urlHelper')
-let dynamoDBHelper = require('./lib/dynamoDBHelper')
+let urlHelper = require('./lib/urlHelper');
+let dynamoDBHelper = require('./lib/dynamoDBHelper');
+let exposeClass = require('./lib/exposeClass');
 
-const fetchUrlBody = urlHelper.fetchUrlBody
-const fnSaveItemToDB = dynamoDBHelper.fnSaveItemToDB
-const fnGetAllDataIds = dynamoDBHelper.fnGetAllDataIds
 let iCounter = 0
 let iCounterNew = 0
 
@@ -22,15 +25,8 @@ let fnCheckForNewItem = function(iExposeId) {
     return dynamoDBHelper.fnGetItemFromDB(iExposeId).then(data => {
         if(Object.keys(data).length === 0){
             iCounterNew++
-            let ad = {
-                'data-id': {
-                    N: iExposeId
-                },
-                'dateCreated': {
-                    N: new Date().getTime().toString()
-                }
-            }
-            return dynamoDBHelper.fnSaveItemToDB(ad);
+            let oExpose = new exposeClass(iExposeId);
+            return oExpose.fnSaveToDynamoDB(oExpose);
         } else {
             console.log('ExposeId ' + iExposeId + ' already on dynamoDB')
         }
@@ -49,8 +45,8 @@ let fnCheckBodyAndReturn = function(sBody, mExposeIds) {
     return
 }
 
-let fnCheckBodyAndExtractExpose = (elem, body) => {
-    let $ = cheerio.load(body)
+let fnCheckBodyAndExtractExpose = (oExpose, body) => {
+/*    let $ = cheerio.load(body)
     let ad = {
         'data-id': {
             N: elem
@@ -90,6 +86,9 @@ let fnCheckBodyAndExtractExpose = (elem, body) => {
         },
         'dateDeactivated': {
             N: "0"
+        },
+        'analyzed': {
+            BOOL: true
         }
 
     }
@@ -110,7 +109,7 @@ let fnCheckBodyAndExtractExpose = (elem, body) => {
     let sLevelSelector = '.is24qa-etage'
     let sAdressSelector = '.zip-region-and-country'
 
-    if ($('.status-message,.status-warning,.margin-top-l').text().match("Angebot wurde deaktiviert") === null &&
+    if ($( '.status-message,.status-warning,.margin-top-l').text().match("Angebot wurde deaktiviert") === null &&
         $('.status-message,.status-warning,.margin-top-l').text().match("Angebot nicht gefunden") === null) {
 
         let nRooms = $(sRoomsSelector).text().match(sRoomsRegEx)
@@ -183,9 +182,9 @@ let fnCheckBodyAndExtractExpose = (elem, body) => {
         ad.dateDeactivated = {
             N: new Date().getTime().toString()
         }
-    }
+    } */
 
-    return fnSaveItemToDB(ad);
+    return dynamoDBHelper.fnSaveItemToDB(ad);
 
 }
 
@@ -195,7 +194,7 @@ exports.myHandler = function(event, context) {
     console.log('Mode: ' + event.mode)
     switch (event.mode) {
         case "grabAll":
-            fetchUrlBody(urlPart1 + urlPart2).then(res => {
+            urlHelper.fetchUrlBody(urlPage(2)).then(res => {
 
                 let oReturnPromise = new Promise((resolve, reject) => {});
                 let aPromise = [];
@@ -204,38 +203,35 @@ exports.myHandler = function(event, context) {
 
                 let index = 0;
 
-                $('#pageSelection > .select').children().each(function(i, elem) {
+                console.log($('#pageSelection').html())
 
+                $('#pageSelection > .select').children().each(function(i, elem) {
+                    console.log(i)
                     index = index + 1;
 
                     if (index > 100) {
                         return
                     }
 
-                    urlPart2 = $(this).attr('value');
+                    page = i + 1
 
-                    urlPart2 = urlPart2.substring(1, urlPart2.length);
+                    console.log(urlPage(page))
+                    
+                    aPromise.push(urlHelper.fetchUrlBody(urlPage(page)))
 
-                    aPromise.push(fetchUrlBody(urlPart1 + urlPart2))
-
-                    /*
-                    fetchUrlBody(urlPart1 + urlPart2).then(res => {
-                        oReturnPromise.then(fnCheckBodyAndSaveItems(res))
-
-                    }).catch(function(err) {
-                        console.log('Error: ' + err)
-                    })*/
                 })
 
                 return Promise.all(aPromise).catch(err => console.log("Error: " + err))
             }).then(aBodies => {
+                console.log("----------------------------------");
                 console.log("Got all bodies, now checking them!");
+                console.log("----------------------------------");
                 let mExposeIds = new Map();
                 let aPromises = [];
                 aBodies.forEach(sBody => {
                     fnCheckBodyAndReturn(sBody, mExposeIds)
                 })
-                console.log(mExposeIds);
+
                 mExposeIds.forEach((sValue, iExposeId) => {
                     aPromises.push(fnCheckForNewItem(iExposeId))
                 })
@@ -247,14 +243,15 @@ exports.myHandler = function(event, context) {
             })
             break;
         case "grabAllDetails":
-            fnGetAllDataIds().then(data => {
+            dynamoDBHelper.fnGetAllUnanylzedDataIds().then(data => {
                 //data.splice(1, data.length - 1)
-                data.forEach(elem => {
-                    fetchUrlBody(exposeUrlPart + elem).then(body => {
-                        fnCheckBodyAndExtractExpose(elem, body)
+                data.forEach(oExpose => {
+                    urlHelper.fetchUrlBody(exposeUrlPart + oExpose.dataId).then(body => {
+                        oExpose.fnScrapeFromBody(body);
+                        return oExpose.fnSaveToDynamoDB();
+                        //fnCheckBodyAndExtractExpose(oExpose, body)
                     }).catch(err => {
-                        console.log(err)
-                        console.log('Expose not found ' + elem)
+                        console.log('Expose not found ' + oExpose.dataId)
                     })
                 })
             })
