@@ -140,26 +140,42 @@ exports.myHandler = function(event, context) {
                 let nTotalLength = aExposes.length;
                 let nCurrentIndex = 0;
                 let aAllExposePromises = [];
-                aExposes.forEach(oExpose => {
-                    let oPromise = new Promise((resolve) => {
-                        oExpose.fnAnalyze().then(() => {
-                            oExpose.fnSaveToDynamoDB().then(() => {
+                let fnWorkOnExposeArray = function(aExposes){
+                    aExposes.forEach(oExpose => {
+                        let oPromise = new Promise((resolve) => {
+                            oExpose.fnAnalyze().then(() => {
+                                oExpose.fnSaveToDynamoDB().then(() => {
+                                    nCurrentIndex = nCurrentIndex + 1;
+                                    console.log(nCurrentIndex + " / " + nTotalLength);
+                                    resolve();
+                                });
+                            }).catch(err => {
+                                console.log(err);
                                 nCurrentIndex = nCurrentIndex + 1;
                                 console.log(nCurrentIndex + " / " + nTotalLength);
                                 resolve();
-                            });
-                        }).catch(err => {
-                            console.log(err);
-                            nCurrentIndex = nCurrentIndex + 1;
-                            console.log(nCurrentIndex + " / " + nTotalLength);
-                            resolve();
-                        })
-                    });
-                    aAllExposePromises.push(oPromise);
-                })
-                Promise.all(aAllExposePromises).then(() => {
-                    console.log("---Finished---")
-                })
+                            })
+                        });
+                        aAllExposePromises.push(oPromise);
+                    })
+                    Promise.all(aAllExposePromises).then(() => {
+                        console.log("---Finished---")
+                    })
+                }
+                let nCounter = 0;
+                let nSize = 5;
+                let nTimes = Math.ceil(aExposes.length / nSize );
+                do{
+                    let nWaitTime = nCounter * 10000;
+                    let nStartIndex = nCounter * nSize;
+                    let nEndIndex = nSize * ( nCounter + 1);
+                    let aTmp = aExposes.slice(nStartIndex,nEndIndex);
+                    setTimeout(function(){
+                        fnWorkOnExposeArray(aTmp);
+                    },nWaitTime)
+                    nCounter = nCounter + 1;
+                }
+                while(nCounter < nTimes)
             })
 
 
