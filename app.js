@@ -16,6 +16,7 @@ let exposeUrlPart = 'https://www.immobilienscout24.de/expose/';
 let urlHelper = require('./lib/urlHelper');
 let dynamoDBHelper = require('./lib/dynamoDBHelper');
 let exposeClass = require('./lib/exposeClass');
+let oExposeScraper = require('./lib/exposeScraper');
 
 let iCounter = 0
 let iCounterNew = 0
@@ -46,143 +47,7 @@ let fnCheckBodyAndReturn = function(sBody, mExposeIds) {
 }
 
 let fnCheckBodyAndExtractExpose = (oExpose, body) => {
-/*    let $ = cheerio.load(body)
-    let ad = {
-        'data-id': {
-            N: elem
-        },
-        'rooms': {
-            N: '0'
-        },
-        'level': {
-            N: '0'
-        },
-        'levelMax': {
-            N: '0'
-        },
-        'size': {
-            N: '0'
-        },
-        'sizeUsable': {
-            N: '0'
-        },
-        'rentWithoutCharges': {
-            N: '0'
-        },
-        'rentCharges': {
-            N: '0'
-        },
-        'rentTotal': {
-            N: '0'
-        },
-        'adress': {
-            S: '-'
-        },
-        'deactivated': {
-            BOOL: false
-        },
-        'dateUpdated': {
-            N: new Date().getTime().toString()
-        },
-        'dateDeactivated': {
-            N: "0"
-        },
-        'analyzed': {
-            BOOL: true
-        }
 
-    }
-
-    let sRoomsRegEx = /\d+/
-    let sRoomsSelector = '.is24qa-zimmer'
-    let sSizeRegEx = /(\d*,\d*)|(\d+)/
-    let sSizeSelector = '.is24qa-wohnflaeche-ca'
-    let sSizeUsableRegex = /(\d*,\d*)|(\d+)/
-    let sSizeUsableSelector = '.is24qa-nutzflaeche-ca'
-    let sRentWithoutChargesRegEx = /\d+/
-    let sRentWithoutChargesSelector = '.is24qa-kaltmiete'
-    let sRentChargesRegex = /\d+/
-    let sRentChargesSelector = '.is24qa-nebenkosten'
-    let sRentTotalRegex = /\d+/
-    let sRentTotalSelector = '.is24qa-gesamtmiete'
-    let sLevelRegex = /(\d) von (\d)/
-    let sLevelSelector = '.is24qa-etage'
-    let sAdressSelector = '.zip-region-and-country'
-
-    if ($( '.status-message,.status-warning,.margin-top-l').text().match("Angebot wurde deaktiviert") === null &&
-        $('.status-message,.status-warning,.margin-top-l').text().match("Angebot nicht gefunden") === null) {
-
-        let nRooms = $(sRoomsSelector).text().match(sRoomsRegEx)
-        let nLevel
-        let nLevelMax
-        let nSize
-        let nSizeUsable
-        let nRentWithoutCharges = $(sRentWithoutChargesSelector).text().match(sRentWithoutChargesRegEx)
-        let nRentCharges = $(sRentChargesSelector).text().match(sRentChargesRegex)
-        let nRentTotal = $(sRentTotalSelector).text().match(sRentChargesRegex)
-        let sAdress
-        let sZipcode
-
-        if (nRooms !== null) {
-            ad.rooms = {
-                N: nRooms[0]
-            }
-        }
-        if (sLevelRegex.exec($(sLevelSelector).text().trim()) !== null) {
-            nLevel = sLevelRegex.exec($(sLevelSelector).text().trim())[1]
-            nLevelMax = sLevelRegex.exec($(sLevelSelector).text().trim())[2]
-            ad.level = {
-                N: nLevel
-            }
-            ad.levelMax = {
-                N: nLevelMax
-            }
-        }
-        if ($(sSizeSelector).text().match(sSizeRegEx) !== null) {
-            nSize = $(sSizeSelector).text().match(sSizeRegEx)[0].replace(',', '.')
-            ad.size = {
-                N: nSize
-            }
-        }
-        if ($(sSizeUsableSelector).text().match(sSizeUsableRegex) !== null) {
-            nSizeUsable = $(sSizeUsableSelector).text().match(sSizeUsableRegex)[0].replace(',', '.')
-            ad.sizeUsable = {
-                N: nSizeUsable
-            }
-        }
-        if (nRentWithoutCharges !== null) {
-            ad.rentWithoutCharges = {
-                N: nRentWithoutCharges[0]
-            }
-        }
-        if (nRentCharges !== null) {
-            ad.rentCharges = {
-                N: nRentCharges[0]
-            }
-        }
-        if (nRentTotal !== null) {
-            ad.rentTotal = {
-                N: nRentTotal[0]
-            }
-        }
-
-        sAdress = $(sAdressSelector).prev().text().replace("(zur Karte)", "").trim()
-        sZipcode = $(sAdressSelector).html().trim()
-        ad.adress = {
-            S: sAdress + sZipcode
-        }
-
-        ad.deactivated = {
-            BOOL: false
-        }
-    } else {
-        ad.deactivated = {
-            BOOL: true
-        }
-        ad.dateDeactivated = {
-            N: new Date().getTime().toString()
-        }
-    } */
 
     return dynamoDBHelper.fnSaveItemToDB(ad);
 
@@ -243,19 +108,59 @@ exports.myHandler = function(event, context) {
             })
             break;
         case "grabAllDetails":
-            dynamoDBHelper.fnGetAllUnanylzedDataIds().then(data => {
-                //data.splice(1, data.length - 1)
-                data.forEach(oExpose => {
-                    urlHelper.fetchUrlBody(exposeUrlPart + oExpose.dataId).then(body => {
-                        oExpose.fnScrapeFromBody(body);
-                        return oExpose.fnSaveToDynamoDB();
-                        //fnCheckBodyAndExtractExpose(oExpose, body)
-                    }).catch(err => {
-                        console.log('Expose not found ' + oExpose.dataId)
-                    })
+            dynamoDBHelper.fnGetAllUnanylzedDataIds().then(aExposes => {
+                let nTotalLength = aExposes.length;
+                let nCurrentIndex = 0;
+                let aAllExposePromises = [];
+                aExposes.forEach(oExpose => {
+                    let oPromise = new Promise((resolve,reject) => {
+                        oExpose.fnAnalyze().then(() => {
+                            oExpose.fnSaveToDynamoDB().then(() => {
+                                nCurrentIndex = nCurrentIndex + 1;
+                                console.log(nCurrentIndex + " / " + nTotalLength);
+                                resolve();
+                            });
+                        }).catch(err => {
+                            console.log(err);
+                            nCurrentIndex = nCurrentIndex + 1;
+                            console.log(nCurrentIndex + " / " + nTotalLength);
+                            resolve();
+                        })
+                    });
+                    aAllExposePromises.push(oPromise);
+                })
+                Promise.all(aAllExposePromises).then(() => {
+                    console.log("---Finished---")
                 })
             })
             break;
+        case "grabMissing":
+
+            dynamoDBHelper.fnGetAllAnaylzedDataIds().then(aExposes => {
+                let nTotalLength = aExposes.length;
+                let nCurrentIndex = 0;
+                let aAllExposePromises = [];
+                aExposes.forEach(oExpose => {
+                    let oPromise = new Promise((resolve) => {
+                        oExpose.fnAnalyze().then(() => {
+                            oExpose.fnSaveToDynamoDB().then(() => {
+                                nCurrentIndex = nCurrentIndex + 1;
+                                console.log(nCurrentIndex + " / " + nTotalLength);
+                                resolve();
+                            });
+                        }).catch(err => {
+                            console.log(err);
+                            nCurrentIndex = nCurrentIndex + 1;
+                            console.log(nCurrentIndex + " / " + nTotalLength);
+                            resolve();
+                        })
+                    });
+                    aAllExposePromises.push(oPromise);
+                })
+                Promise.all(aAllExposePromises).then(() => {
+                    console.log("---Finished---")
+                })
+            })
 
 
     }
